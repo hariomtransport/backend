@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS goods;
+DROP TABLE IF EXISTS bilty;
+DROP TABLE IF EXISTS bilty_address;
+DROP TABLE IF EXISTS company_address;
+DROP TABLE IF EXISTS company;
+DROP TABLE IF EXISTS app_user;
+DROP TABLE IF EXISTS initial_setup;
