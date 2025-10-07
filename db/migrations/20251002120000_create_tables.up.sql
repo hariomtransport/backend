@@ -89,6 +89,6 @@ CREATE TABLE IF NOT EXISTS initial_setup (
     state TEXT NOT NULL,
     pincode TEXT NOT NULL,
     mobile JSONB,
-    footnote TEXT,
+    footnote JSONB,
     created_at TIMESTAMP DEFAULT now()
 );
