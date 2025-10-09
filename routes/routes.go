@@ -27,10 +27,12 @@ func SetupRoutes(
 	userHandler *handlers.UserHandler,
 	biltyHandler *handlers.BiltyHandler,
 	initialHandler *handlers.InitialHandler,
+	pdfHandler *handlers.PDFHandler,
 ) {
 	// User routes
 	http.Handle("/signup", withCORS(http.HandlerFunc(userHandler.Signup)))
 	http.Handle("/login", withCORS(http.HandlerFunc(userHandler.Login)))
+	http.Handle("/bilty/pdf", withCORS(http.HandlerFunc(pdfHandler.BiltyPDF)))
 
 	// Bilty routes
 	http.Handle("/bilty", withCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

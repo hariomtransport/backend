@@ -14,6 +14,7 @@ import (
 )
 
 func main() {
+	// Load config from .env or config file
 	cfg := config.LoadConfig()
 
 	// Run migrations (for Postgres)
@@ -50,14 +51,24 @@ func main() {
 		panic("DB_TYPE not supported")
 	}
 
+	// Handlers
 	biltyHandler := &handlers.BiltyHandler{Repo: biltyRepo}
 	userHandler := &handlers.UserHandler{Repo: userRepo}
 	initialHandler := &handlers.InitialHandler{Repo: initialRepo}
 
-	// Setup routes for users, bilty, and initial
-	routes.SetupRoutes(userHandler, biltyHandler, initialHandler)
+	// PDF handler with combined repository
+	pdfRepo := &repository.PDFRepository{
+		BiltyRepo:   biltyRepo,
+		InitialRepo: initialRepo,
+	}
+	pdfHandler := &handlers.PDFHandler{Repo: pdfRepo}
+
+	// Setup routes including PDF
+	routes.SetupRoutes(userHandler, biltyHandler, initialHandler, pdfHandler)
 
 	port := cfg.Port
 	fmt.Printf("Server running on port %s\n", port)
-	http.ListenAndServe(":"+port, nil)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		panic(err)
+	}
 }
