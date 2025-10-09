@@ -197,3 +197,76 @@ func (r *MongoBiltyRepo) populateNested(b *models.Bilty, ctx context.Context, db
 
 	return b
 }
+
+func (r *MongoBiltyRepo) UpdatePDFCreatedAt(biltyID int64, t time.Time) error {
+	ctx := context.Background()
+	db := r.DB.Database("hariomtransport")
+
+	filter := bson.M{"_id": biltyID}
+	update := bson.M{"$set": bson.M{"pdf_created_at": t}}
+
+	_, err := db.Collection("bilty").UpdateOne(ctx, filter, update)
+	return err
+}
+
+func (r *MongoBiltyRepo) DeleteBilty(biltyID int64) error {
+	ctx := context.Background()
+	db := r.DB.Database("hariomtransport")
+
+	// 1. Fetch bilty
+	var b models.Bilty
+	err := db.Collection("bilty").FindOne(ctx, bson.M{"_id": biltyID}).Decode(&b)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil
+		}
+		return err
+	}
+
+	// 2. Delete goods
+	_, _ = db.Collection("goods").DeleteMany(ctx, bson.M{"bilty_id": biltyID})
+
+	// 3. Delete bilty itself
+	_, _ = db.Collection("bilty").DeleteOne(ctx, bson.M{"_id": biltyID})
+
+	// Helper: delete bilty_address if not used in any other bilty
+	checkAndDeleteBiltyAddress := func(addrID *int64) error {
+		if addrID == nil {
+			return nil
+		}
+		count, err := db.Collection("bilty").CountDocuments(ctx, bson.M{
+			"$or": []bson.M{
+				{"consignor_address_id": *addrID},
+				{"consignee_address_id": *addrID},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			var addr models.BiltyAddress
+			if err := db.Collection("bilty_address").FindOne(ctx, bson.M{"_id": *addrID}).Decode(&addr); err == nil {
+				_, _ = db.Collection("bilty_address").DeleteOne(ctx, bson.M{"_id": *addrID})
+
+				// Delete company_address if not used anywhere
+				if addr.CompanyID != nil {
+					count2, _ := db.Collection("bilty_address").CountDocuments(ctx, bson.M{"company_id": addr.CompanyID})
+					if count2 == 0 {
+						_, _ = db.Collection("company_address").DeleteOne(ctx, bson.M{"_id": addr.CompanyID})
+					}
+				}
+			}
+		}
+		return nil
+	}
+
+	// Delete bilty addresses and associated company addresses if safe
+	if err := checkAndDeleteBiltyAddress(b.ConsignorAddressID); err != nil {
+		return err
+	}
+	if err := checkAndDeleteBiltyAddress(b.ConsigneeAddressID); err != nil {
+		return err
+	}
+
+	return nil
+}

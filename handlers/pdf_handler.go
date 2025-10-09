@@ -62,6 +62,12 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update pdf_created_at in bilty table
+	if err := h.Repo.BiltyRepo.UpdatePDFCreatedAt(biltyID, time.Now()); err != nil {
+		// Log the error but don't block the response
+		fmt.Printf("failed to update pdf_created_at for bilty %d: %v\n", biltyID, err)
+	}
+
 	// Respond with success
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

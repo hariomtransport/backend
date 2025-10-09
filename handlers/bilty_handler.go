@@ -82,3 +82,29 @@ func (h *BiltyHandler) GetBiltyByID(w http.ResponseWriter, r *http.Request, id s
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(list[0])
 }
+
+func (h *BiltyHandler) DeleteBilty(w http.ResponseWriter, r *http.Request) {
+
+	biltyIDStr := r.URL.Query().Get("id")
+	if biltyIDStr == "" {
+		http.Error(w, "missing bilty id", http.StatusBadRequest)
+		return
+	}
+
+	biltyID, err := strconv.ParseInt(biltyIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid bilty id", http.StatusBadRequest)
+		return
+	}
+
+	// Attempt to delete bilty
+	if err := h.Repo.DeleteBilty(biltyID); err != nil {
+		http.Error(w, "failed to delete bilty: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Respond with success
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"success":true,"message":"Bilty deleted successfully"}`))
+}

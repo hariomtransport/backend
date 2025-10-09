@@ -41,6 +41,8 @@ func SetupRoutes(
 			biltyHandler.CreateBilty(w, r)
 		case http.MethodGet:
 			biltyHandler.GetAllBilty(w, r)
+		case http.MethodDelete:
+			biltyHandler.DeleteBilty(w, r)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}

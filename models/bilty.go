@@ -26,6 +26,8 @@ type Bilty struct {
 	Statistical        *string   `json:"statistical,omitempty" db:"statistical"`
 	CreatedBy          int64     `json:"created_by" db:"created_by"`
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
+	PdfCreatedAt       time.Time `json:"pdf_created_at" db:"pdf_created_at"`
 	Status             string    `json:"status" db:"status"` // draft | complete
 
 	// Nested objects for responses (denormalized)

@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS bilty (
     statistical TEXT,
     created_by BIGINT REFERENCES app_user(id),
     created_at TIMESTAMP DEFAULT now(),
+    updated_at TIMESTAMP DEFAULT now(),
+    pdf_created_at TIMESTAMP,
     status TEXT NOT NULL CHECK (status IN ('draft', 'complete'))
 );
 
