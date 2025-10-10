@@ -3,7 +3,7 @@ package repository
 import (
 	"time"
 
-	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/backend/models"
 )
 
 type BiltyRepository interface {

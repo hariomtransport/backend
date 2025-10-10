@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/backend/models"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"

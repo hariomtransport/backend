@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/hariomtransport/models"
-	"github.com/hariomtransport/repository"
+	"github.com/hariomtransport/backend/models"
+	"github.com/hariomtransport/backend/repository"
 )
 
 type InitialHandler struct {

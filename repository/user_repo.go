@@ -1,6 +1,6 @@
 package repository
 
-import "github.com/hariomtransport/models"
+import "github.com/hariomtransport/backend/models"
 
 // UserRepository defines the interface for user operations
 type UserRepository interface {

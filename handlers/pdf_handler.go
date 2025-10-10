@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hariomtransport/repository"
-	"github.com/hariomtransport/utils"
+	"github.com/hariomtransport/backend/repository"
+	"github.com/hariomtransport/backend/utils"
 )
 
 type PDFHandler struct {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/backend/models"
 )
 
 type PostgresBiltyRepo struct {

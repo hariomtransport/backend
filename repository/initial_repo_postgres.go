@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/backend/models"
 )
 
 type PostgresInitialRepo struct {

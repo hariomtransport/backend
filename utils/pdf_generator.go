@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/hariomtransport/models"
-	"github.com/hariomtransport/repository"
+	"github.com/hariomtransport/backend/models"
+	"github.com/hariomtransport/backend/repository"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"

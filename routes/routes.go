@@ -3,7 +3,7 @@ package routes
 import (
 	"net/http"
 
-	"github.com/hariomtransport/handlers"
+	"github.com/hariomtransport/backend/handlers"
 )
 
 // CORS middleware
