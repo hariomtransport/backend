@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"hariomtransport/models"
-	"hariomtransport/repository"
+	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/repository"
 )
 
 type BiltyHandler struct {

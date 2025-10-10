@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"hariomtransport/models"
+	"github.com/hariomtransport/models"
 
 	"golang.org/x/crypto/bcrypt"
 )

@@ -3,12 +3,13 @@ package utils
 import (
 	"bytes"
 	"context"
-	"hariomtransport/models"
-	"hariomtransport/repository"
 	"html/template"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/hariomtransport/models"
+	"github.com/hariomtransport/repository"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -110,7 +111,7 @@ func GenerateBiltyPDF(repo *repository.PDFRepository, biltyID int64) ([]byte, er
 
 	// Create temp HTML file
 	tmpDir := os.TempDir()
-	tmpHTML := filepath.Join(tmpDir, "bilty_"+time.Now().Format("20060102150405")+".html")
+	tmpHTML := filepath.Join(tmpDir, "bilty_"+time.Now().UTC().Format("20060102150405")+".html")
 	if err := os.WriteFile(tmpHTML, []byte(finalHTML), 0644); err != nil {
 		return nil, err
 	}

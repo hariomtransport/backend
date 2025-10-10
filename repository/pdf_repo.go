@@ -1,7 +1,7 @@
 package repository
 
 import (
-	"hariomtransport/models"
+	"github.com/hariomtransport/models"
 )
 
 // PDFRepository provides methods to fetch data for PDF generation

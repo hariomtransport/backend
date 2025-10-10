@@ -4,139 +4,75 @@
     <meta charset="UTF-8" />
     <title>Bilty</title>
     <style>
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 11px;
-        margin: 0px 10px 10px 10px;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-      }
-      th,
-      td {
-        border: 1px solid #000;
-        padding: 0px 0px;
-        vertical-align: top;
-      }
-      .no-border td,
-      .no-border th {
-        border: none;
-        padding: 0.5px 4px;
-      }
-      .center {
-        text-align: center;
-      }
-      .right {
-        text-align: right;
-      }
-      .bold {
-        font-weight: bold;
-      }
-      .section-title {
-        font-weight: bold;
-        background: #eee;
-        text-align: center;
-        padding: 3px 0;
-        border: 1px solid #000;
-      }
-      hr {
-        border: none;
-        border-top: 1px solid #000;
-        margin: 4px 0;
-      }
-      .heading {
-        font-size: 11px;
-        margin: 2px 0;
-      }
-      .footer-note {
-        font-size: 10px;
-      }
+      * { box-sizing: border-box; }
+      body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; margin: 0px 10px 10px 10px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #000; padding: 0px 0px; vertical-align: top; }
+      .no-border td, .no-border th { border: none; padding: 0.5px 4px; }
+      .center { text-align: center; }
+      .right { text-align: right; }
+      .bold { font-weight: bold; }
+      .section-title { font-weight: bold; background: #eee; text-align: center; padding: 3px 0; border: 1px solid #000; }
+      hr { border: none; border-top: 1px solid #000; margin: 4px 0; }
+      .heading { font-size: 11px; margin: 2px 0; }
+      .footer-note { font-size: 10px; }
     </style>
   </head>
-
   <body>
-    <div
-      style="
-        border: 1px solid #000;
-        border-bottom: none;
-        position: relative;
-        padding: 5px 5px;
-      "
-    >
-      <table class="no-border" style="width: 100%; border-collapse: collapse">
+    <div style="border: 1px solid #000; border-bottom: none; position: relative; padding: 5px 5px;">
+      <table class="no-border">
         <tr>
           <td style="text-align: center">
-            <h3 style="margin: 0; font-size: 16px">
-              {{if .Company}}{{.Company.CompanyName}}{{end}}
-            </h3>
-            <p style="margin: 0; font-size: 12px">
-              {{if .Company}}{{.Company.Address}}{{end}}
-            </p>
-            <p style="margin: 0; font-size: 12px">
-              GSTIN: {{if .Company}}{{.Company.GSTIN}}{{end}} | M: {{.Contacts}}
-            </p>
+            {{if .Company}}
+              <h3 style="margin:0; font-size:16px">{{.Company.CompanyName}}</h3>
+              <p style="margin:0; font-size:12px">{{.Company.Address}}</p>
+              <p style="margin:0; font-size:12px">
+                GSTIN: {{.Company.GSTIN}} {{if .Contacts}} | M: {{.Contacts}}{{end}}
+              </p>
+            {{end}}
           </td>
         </tr>
       </table>
-
-      <!-- Copy Title inside same border, top-right corner -->
-      <div
-        style="
-          position: absolute;
-          top: 5px;
-          right: 10px;
-          font-weight: bold;
-          font-size: 12px;
-          text-transform: uppercase;
-        "
-      >
-        {{.CopyTitle}}
+      <div style="position: absolute; top:5px; right:10px; font-weight:bold; font-size:12px; text-transform:uppercase;">
+        {{if .CopyTitle}}{{.CopyTitle}}{{end}}
       </div>
     </div>
 
     <div style="border: 1px solid #000; padding: 0px 6px; border-bottom: none">
-      <table class="no-border" width="100%">
+      <table class="no-border">
         <tr>
-          <td><strong>Bilty No:</strong> {{.Bilty.BiltyNo}}</td>
+          <td><strong>Bilty No:</strong> {{if .Bilty}}{{.Bilty.BiltyNo}}{{end}}</td>
           <td class="right"><strong>Date:</strong> {{.Date}}</td>
         </tr>
       </table>
     </div>
 
     <div style="border: 1px solid #000; padding: 0px 6px; border-bottom: none">
-      <table class="no-border" width="100%">
+      <table class="no-border">
         <tr>
           <td>
-            <strong>Consignor:</strong> {{.Bilty.ConsignorCompany.Name}},
-            {{.Bilty.ConsignorAddressSnap.AddressLine}}
+            <strong>Consignor:</strong> {{if .Bilty}}{{if .Bilty.ConsignorCompany}}{{.Bilty.ConsignorCompany.Name}}{{end}}{{if .Bilty.ConsignorAddressSnap}}, {{.Bilty.ConsignorAddressSnap.AddressLine}}{{end}}{{end}}
           </td>
           <td class="right">
-            <strong>GSTIN:</strong> {{.Bilty.ConsignorCompany.GSTIN}}
+            <strong>GSTIN:</strong> {{if .Bilty}}{{if .Bilty.ConsignorCompany}}{{.Bilty.ConsignorCompany.GSTIN}}{{end}}{{end}}
           </td>
         </tr>
         <tr>
           <td>
-            <strong>Consignee:</strong> {{.Bilty.ConsigneeCompany.Name}},
-            {{.Bilty.ConsigneeAddressSnap.AddressLine}}
+            <strong>Consignee:</strong> {{if .Bilty}}{{if .Bilty.ConsigneeCompany}}{{.Bilty.ConsigneeCompany.Name}}{{end}}{{if .Bilty.ConsigneeAddressSnap}}, {{.Bilty.ConsigneeAddressSnap.AddressLine}}{{end}}{{end}}
           </td>
           <td class="right">
-            <strong>GSTIN:</strong> {{.Bilty.ConsigneeCompany.GSTIN}}
+            <strong>GSTIN:</strong> {{if .Bilty}}{{if .Bilty.ConsigneeCompany}}{{.Bilty.ConsigneeCompany.GSTIN}}{{end}}{{end}}
           </td>
         </tr>
       </table>
     </div>
 
     <div style="border: 1px solid #000; padding: 0px 6px; border-bottom: none">
-      <table class="no-border" width="100%">
+      <table class="no-border">
         <tr>
-          <td><strong>From:</strong> {{.Bilty.ConsignorAddressSnap.City}}</td>
-          <td class="right">
-            <strong>To:</strong> {{.Bilty.ConsigneeAddressSnap.City}}
-          </td>
+          <td><strong>From:</strong> {{if .Bilty}}{{if .Bilty.ConsignorAddressSnap}}{{.Bilty.ConsignorAddressSnap.City}}{{end}}{{end}}</td>
+          <td class="right"><strong>To:</strong> {{if .Bilty}}{{if .Bilty.ConsigneeAddressSnap}}{{.Bilty.ConsigneeAddressSnap.City}}{{end}}{{end}}</td>
         </tr>
       </table>
     </div>
@@ -154,7 +90,7 @@
         </tr>
       </thead>
       <tbody>
-        {{range .Bilty.Goods}}
+        {{if .Bilty}}{{range .Bilty.Goods}}
         <tr>
           <td class="center">{{.Particulars}}</td>
           <td class="center">{{.NumOfPkts}}</td>
@@ -163,19 +99,16 @@
           <td class="center">{{.Per}}</td>
           <td class="center">{{.Amount}}</td>
         </tr>
-        {{end}}
+        {{end}}{{end}}
       </tbody>
     </table>
 
     <!-- Invoice Details -->
-    <div style="border: 1px solid #000; padding: 3px 6px; border-top: none">
+    <div style="border:1px solid #000; padding:3px 6px; border-top:none">
       <table class="no-border">
+        {{if .Bilty}}
         <tr>
-          <td colspan="2">
-            <div style="display: flex; justify-content: center">
-              <strong>TOTAL</strong>&nbsp;&nbsp;&nbsp;&nbsp;{{.GoodsCount}}
-            </div>
-          </td>
+          <td colspan="2"><div style="display:flex; justify-content:center"><strong>TOTAL</strong>&nbsp;&nbsp;&nbsp;&nbsp;{{.GoodsCount}}</div></td>
           <td><strong>HAMALI:</strong></td>
           <td>{{.Bilty.Hamali}}</td>
         </tr>
@@ -221,35 +154,25 @@
           <td><strong>Total:</strong></td>
           <td>{{.Bilty.ToPay}}</td>
         </tr>
+        {{end}}
       </table>
     </div>
 
     <!-- Footer Notes -->
     {{if .Company.Footnote}}
-    <div
-      class="footer-note"
-      style="border: 1px solid #000; padding: 0px 6px; border-top: none"
-    >
+    <div class="footer-note" style="border:1px solid #000; padding:0px 6px; border-top:none">
       <table class="no-border">
         {{range .Company.Footnote}}
-        <tr>
-          <td>{{.}}</td>
-        </tr>
+        <tr><td>{{.}}</td></tr>
         {{end}}
       </table>
     </div>
     {{end}}
-    <div
-      class="footer-note"
-      style="border: 1px solid #000; padding: 0px 6px; border-top: none; margin-bottom: 25px;"
-    >
+
+    <div class="footer-note" style="border:1px solid #000; padding:0px 6px; border-top:none; margin-bottom:25px;">
       <table class="no-border">
         <tr>
-          <td colspan="2">
-            <strong>Our Branch:</strong> {{if
-            .Company.CompanyName}}{{.Company.CompanyName}}{{end}}
-          </td>
-          <!-- <td class="right">Booking Officer</td> -->
+          <td colspan="2"><strong>Our Branch:</strong> {{if .Company}}{{.Company.CompanyName}}{{end}}</td>
         </tr>
       </table>
     </div>

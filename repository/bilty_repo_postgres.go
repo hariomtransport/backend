@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"hariomtransport/models"
+	"github.com/hariomtransport/models"
 )
 
 type PostgresBiltyRepo struct {
@@ -361,7 +361,7 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 			bilty.FromLocation, bilty.ToLocation, bilty.Date, bilty.ToPay, bilty.GSTIN,
 			bilty.InvNo, bilty.PVTMarks, bilty.PermitNo, bilty.ValueRupees, bilty.Remarks,
 			bilty.Hamali, bilty.DDCharges, bilty.OtherCharges, bilty.FOV, bilty.Statistical,
-			bilty.Status, time.Now().UTC(), bilty.ID, bilty.ConsignorAddressID, bilty.ConsigneeAddressID,
+			bilty.Status, time.Now().UTC(), bilty.ConsignorAddressID, bilty.ConsigneeAddressID, bilty.ID,
 		)
 		if err != nil {
 			return err
