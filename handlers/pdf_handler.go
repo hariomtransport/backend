@@ -18,6 +18,7 @@ type PDFHandler struct {
 }
 
 // BiltyPDF handles the API request to generate and save a Bilty PDF
+// BiltyPDF handles the API request to generate and save a Bilty PDF
 func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 	// Parse bilty ID
 	biltyIDStr := r.URL.Query().Get("id")
@@ -32,7 +33,18 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure save directory exists
+	// Fetch bilty record
+	bilty, err := h.Repo.BiltyRepo.GetBiltyByID(biltyID)
+	if err != nil {
+		http.Error(w, "failed to fetch bilty: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if bilty == nil {
+		http.Error(w, "bilty not found", http.StatusNotFound)
+		return
+	}
+
+	// Determine save directory
 	saveDir := h.SavePath
 	if saveDir == "" {
 		saveDir = "./pdfs"
@@ -42,7 +54,22 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate PDF bytes
+	// Check if PDF can be reused
+	if bilty.PdfCreatedAt.IsZero() && bilty.UpdatedAt.IsZero() {
+		if bilty.PdfCreatedAt.After(bilty.UpdatedAt) && bilty.PdfPath != nil {
+			// PDF is up-to-date
+			existingPath := filepath.Join(saveDir, filepath.Base(*bilty.PdfPath))
+			if _, err := os.Stat(existingPath); err == nil {
+				// Existing PDF found and valid
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(fmt.Sprintf(`{"success":true,"file":"%s"}`, filepath.Base(*bilty.PdfPath))))
+				return
+			}
+		}
+	}
+
+	// Generate new PDF
 	pdfBytes, err := utils.GenerateBiltyPDF(h.Repo, biltyID)
 	if err != nil {
 		http.Error(w, "failed to generate PDF: "+err.Error(), http.StatusInternalServerError)
@@ -62,10 +89,10 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update pdf_created_at in bilty table
-	if err := h.Repo.BiltyRepo.UpdatePDFCreatedAt(biltyID, time.Now()); err != nil {
-		// Log the error but don't block the response
-		fmt.Printf("failed to update pdf_created_at for bilty %d: %v\n", biltyID, err)
+	// Update PDF info in database
+	now := time.Now()
+	if err := h.Repo.BiltyRepo.UpdatePDFInfo(biltyID, savePath, now); err != nil {
+		fmt.Printf("failed to update pdf_path/pdf_created_at for bilty %d: %v\n", biltyID, err)
 	}
 
 	// Respond with success

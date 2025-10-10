@@ -64,7 +64,7 @@ func (r *PostgresBiltyRepo) upsertCompany(tx *sql.Tx, c *models.Company) (int64,
 	return id, nil
 }
 
-// Find or Insert Company Address (reuses existing if same details)
+// Find or insert company address if not exists
 func (r *PostgresBiltyRepo) findOrInsertCompanyAddress(tx *sql.Tx, addr *models.CompanyAddress) (int64, error) {
 	if addr.CreatedAt.IsZero() {
 		addr.CreatedAt = time.Now().UTC()
@@ -94,41 +94,6 @@ func (r *PostgresBiltyRepo) findOrInsertCompanyAddress(tx *sql.Tx, addr *models.
 	return newID, err
 }
 
-// Insert bilty address snapshot
-func (r *PostgresBiltyRepo) insertBiltyAddress(tx *sql.Tx, addr *models.CompanyAddress) (int64, error) {
-	var id int64
-	err := tx.QueryRow(`
-		INSERT INTO bilty_address(company_id,address_line,city,state,pincode,created_at)
-		VALUES($1,$2,$3,$4,$5,$6)
-		RETURNING id
-	`, addr.CompanyID, addr.AddressLine, addr.City, addr.State, addr.Pincode, time.Now().UTC()).Scan(&id)
-	return id, err
-}
-
-// Check if address changed
-func (r *PostgresBiltyRepo) hasAddressChanged(tx *sql.Tx, existingID int64, newAddr *models.CompanyAddress) (bool, error) {
-	var existing models.BiltyAddress
-	err := tx.QueryRow(`
-		SELECT address_line, city, state, pincode
-		FROM bilty_address
-		WHERE id=$1
-	`, existingID).Scan(&existing.AddressLine, &existing.City, &existing.State, &existing.Pincode)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return true, nil
-		}
-		return false, err
-	}
-
-	if existing.AddressLine != newAddr.AddressLine ||
-		existing.City != newAddr.City ||
-		existing.State != newAddr.State ||
-		existing.Pincode != newAddr.Pincode {
-		return true, nil
-	}
-	return false, nil
-}
-
 // Insert goods
 func (r *PostgresBiltyRepo) insertGoods(tx *sql.Tx, biltyID int64, goods []models.Goods) error {
 	for i := range goods {
@@ -144,7 +109,7 @@ func (r *PostgresBiltyRepo) insertGoods(tx *sql.Tx, biltyID int64, goods []model
 	return nil
 }
 
-// Insert main bilty record
+// Insert new bilty
 func (r *PostgresBiltyRepo) insertBiltyMain(tx *sql.Tx, bilty *models.Bilty) error {
 	if bilty.CreatedAt.IsZero() {
 		bilty.CreatedAt = time.Now().UTC()
@@ -168,7 +133,7 @@ func (r *PostgresBiltyRepo) insertBiltyMain(tx *sql.Tx, bilty *models.Bilty) err
 	).Scan(&bilty.ID, &bilty.BiltyNo)
 }
 
-// ------------------------ Address Helper ------------------------
+// ------------------------ Handle Bilty Address ------------------------
 
 func (r *PostgresBiltyRepo) handleBiltyAddress(
 	tx *sql.Tx,
@@ -183,19 +148,21 @@ func (r *PostgresBiltyRepo) handleBiltyAddress(
 	if oldAddrID != nil {
 		var existing models.BiltyAddress
 		err := tx.QueryRow(`
-			SELECT address_line, city, state, pincode
-			FROM bilty_address
-			WHERE id=$1
+		SELECT address_line, city, state, pincode
+		FROM bilty_address
+		WHERE id=$1
 		`, *oldAddrID).Scan(&existing.AddressLine, &existing.City, &existing.State, &existing.Pincode)
 		if err != nil {
-			return nil, err
-		}
-
-		if existing.AddressLine == addrSnap.AddressLine &&
-			existing.City == addrSnap.City &&
-			existing.State == addrSnap.State &&
-			existing.Pincode == addrSnap.Pincode {
-			return oldAddrID, nil
+			if err != sql.ErrNoRows {
+				return nil, err
+			}
+		} else {
+			if existing.AddressLine == addrSnap.AddressLine &&
+				existing.City == addrSnap.City &&
+				existing.State == addrSnap.State &&
+				existing.Pincode == addrSnap.Pincode {
+				return oldAddrID, nil // no change
+			}
 		}
 	}
 
@@ -209,10 +176,38 @@ func (r *PostgresBiltyRepo) handleBiltyAddress(
 		return nil, err
 	}
 
+	if oldAddrID != nil {
+		fmt.Printf("[INFO] Updating bilty records from old address ID %d to new ID %d\n", *oldAddrID, newID)
+
+		// Update consignor_address_id and consignee_address_id in a single query
+		if _, err := tx.Exec(`
+        UPDATE bilty
+        SET consignor_address_id = CASE WHEN consignor_address_id = $1 THEN $2 ELSE consignor_address_id END,
+            consignee_address_id = CASE WHEN consignee_address_id = $1 THEN $2 ELSE consignee_address_id END
+        WHERE consignor_address_id = $1 OR consignee_address_id = $1
+    	`, *oldAddrID, newID); err != nil {
+			return nil, err
+		}
+
+		// Delete old address if unused
+		var count int
+		err = tx.QueryRow(` SELECT COUNT(*) FROM bilty_address WHERE id=$1 `, *oldAddrID).Scan(&count)
+		if err != nil {
+			return nil, err
+		}
+
+		if count != 0 {
+			fmt.Printf("[INFO] Deleting unused bilty_address ID %d\n", *oldAddrID)
+			if _, err := tx.Exec(`DELETE FROM bilty_address WHERE id=$1`, *oldAddrID); err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return &newID, nil
 }
 
-// ------------------------ Main Function ------------------------
+// ------------------------ Create / Update Bilty ------------------------
 
 func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 	tx, err := r.DB.Begin()
@@ -234,6 +229,7 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 		}
 	}
 
+	// Upsert companies
 	if bilty.ConsignorCompanyID == nil && bilty.ConsignorCompany != nil {
 		id, err := r.upsertCompany(tx, bilty.ConsignorCompany)
 		if err != nil {
@@ -249,72 +245,135 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 		bilty.ConsigneeCompanyID = &id
 	}
 
-	var consignorOldID *int64
-	if bilty.ConsignorAddressID != nil {
-		consignorOldID = bilty.ConsignorAddressID
-	}
-	bilty.ConsignorAddressID, err = r.handleBiltyAddress(tx, bilty.ConsignorCompanyID, bilty.ConsignorAddressSnap, consignorOldID)
-	if err != nil {
-		return err
+	// Upsert company addresses (not bilty addresses)
+	if bilty.ConsignorAddressSnap != nil {
+		_, err := r.findOrInsertCompanyAddress(tx, &models.CompanyAddress{
+			CompanyID:   *bilty.ConsignorCompanyID,
+			AddressLine: bilty.ConsignorAddressSnap.AddressLine,
+			City:        bilty.ConsignorAddressSnap.City,
+			State:       bilty.ConsignorAddressSnap.State,
+			Pincode:     bilty.ConsignorAddressSnap.Pincode,
+		})
+		if err != nil {
+			return err
+		}
 	}
 
-	var consigneeOldID *int64
-	if bilty.ConsigneeAddressID != nil {
-		consigneeOldID = bilty.ConsigneeAddressID
-	}
-	bilty.ConsigneeAddressID, err = r.handleBiltyAddress(tx, bilty.ConsigneeCompanyID, bilty.ConsigneeAddressSnap, consigneeOldID)
-	if err != nil {
-		return err
+	if bilty.ConsigneeAddressSnap != nil {
+		_, err := r.findOrInsertCompanyAddress(tx, &models.CompanyAddress{
+			CompanyID:   *bilty.ConsigneeCompanyID,
+			AddressLine: bilty.ConsigneeAddressSnap.AddressLine,
+			City:        bilty.ConsigneeAddressSnap.City,
+			State:       bilty.ConsigneeAddressSnap.State,
+			Pincode:     bilty.ConsigneeAddressSnap.Pincode,
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// Insert or update main bilty
 	if bilty.ID == 0 {
+		if bilty.ConsignorAddressSnap != nil {
+			bilty.ConsignorAddressID, err = r.handleBiltyAddress(tx, bilty.ConsignorCompanyID, bilty.ConsignorAddressSnap, bilty.ConsignorAddressID)
+			if err != nil {
+				return err
+			}
+		}
+		if bilty.ConsigneeAddressSnap != nil {
+			bilty.ConsigneeAddressID, err = r.handleBiltyAddress(tx, bilty.ConsigneeCompanyID, bilty.ConsigneeAddressSnap, bilty.ConsigneeAddressID)
+			if err != nil {
+				return err
+			}
+		}
 		if err := r.insertBiltyMain(tx, bilty); err != nil {
 			return err
 		}
 	} else {
+		var hasConsignorAddressChanged bool
+		var consignorErr error
+
+		if bilty.ConsignorAddressID != nil {
+			hasConsignorAddressChanged, consignorErr = r.hasAddressChanged(tx, *bilty.ConsignorAddressID, bilty.ConsignorAddressSnap)
+		} else {
+			// No existing address → treat as changed
+			hasConsignorAddressChanged = true
+		}
+
+		if consignorErr != nil {
+			return consignorErr
+		}
+
+		if hasConsignorAddressChanged && bilty.ConsignorAddressSnap != nil {
+			bilty.ConsignorAddressID, err = r.handleBiltyAddress(tx, bilty.ConsignorCompanyID, bilty.ConsignorAddressSnap, bilty.ConsignorAddressID)
+			if err != nil {
+				return err
+			}
+		}
+
+		var hasConsigneeAddressChanged bool
+		var consigneeErr error
+
+		if bilty.ConsigneeAddressID != nil {
+			hasConsigneeAddressChanged, consigneeErr = r.hasAddressChanged(tx, *bilty.ConsigneeAddressID, bilty.ConsigneeAddressSnap)
+		} else {
+			// No existing address → treat as changed
+			hasConsigneeAddressChanged = true
+		}
+
+		if consigneeErr != nil {
+			return consigneeErr
+		}
+
+		if hasConsigneeAddressChanged && bilty.ConsigneeAddressSnap != nil {
+			bilty.ConsigneeAddressID, err = r.handleBiltyAddress(tx, bilty.ConsigneeCompanyID, bilty.ConsigneeAddressSnap, bilty.ConsigneeAddressID)
+			if err != nil {
+				return err
+			}
+		}
+		// Update main bilty, do not touch bilty addresses
 		_, err := tx.Exec(`
 			UPDATE bilty SET
 				consignor_company_id=$1,
 				consignee_company_id=$2,
-				consignor_address_id=$3,
-				consignee_address_id=$4,
-				from_location=$5,
-				to_location=$6,
-				date=$7,
-				to_pay=$8,
-				gstin=$9,
-				inv_no=$10,
-				pvt_marks=$11,
-				permit_no=$12,
-				value_rupees=$13,
-				remarks=$14,
-				hamali=$15,
-				dd_charges=$16,
-				other_charges=$17,
-				fov=$18,
-				statistical=$19,
-				status=$20,
-				updated_at=$21
+				from_location=$3,
+				to_location=$4,
+				date=$5,
+				to_pay=$6,
+				gstin=$7,
+				inv_no=$8,
+				pvt_marks=$9,
+				permit_no=$10,
+				value_rupees=$11,
+				remarks=$12,
+				hamali=$13,
+				dd_charges=$14,
+				other_charges=$15,
+				fov=$16,
+				statistical=$17,
+				status=$18,
+				updated_at=$19,
+				consignor_address_id=$20,
+				consignee_address_id=$21
 			WHERE id=$22
 		`,
 			bilty.ConsignorCompanyID, bilty.ConsigneeCompanyID,
-			bilty.ConsignorAddressID, bilty.ConsigneeAddressID,
 			bilty.FromLocation, bilty.ToLocation, bilty.Date, bilty.ToPay, bilty.GSTIN,
 			bilty.InvNo, bilty.PVTMarks, bilty.PermitNo, bilty.ValueRupees, bilty.Remarks,
 			bilty.Hamali, bilty.DDCharges, bilty.OtherCharges, bilty.FOV, bilty.Statistical,
-			bilty.Status, time.Now().UTC(), bilty.ID,
+			bilty.Status, time.Now().UTC(), bilty.ID, bilty.ConsignorAddressID, bilty.ConsigneeAddressID,
 		)
 		if err != nil {
 			return err
 		}
 
-		// Delete existing goods before re-inserting
+		// Refresh goods
 		if _, err := tx.Exec(`DELETE FROM goods WHERE bilty_id=$1`, bilty.ID); err != nil {
 			return err
 		}
 	}
 
+	// Insert goods
 	if err := r.insertGoods(tx, bilty.ID, bilty.Goods); err != nil {
 		return err
 	}
@@ -322,7 +381,31 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 	return tx.Commit()
 }
 
-// GetBilty fetches one or multiple bilties with nested companies, addresses, goods, and created_by
+func (r *PostgresBiltyRepo) hasAddressChanged(tx *sql.Tx, existingID int64, newAddr *models.BiltyAddress) (bool, error) {
+	var existing models.BiltyAddress
+	err := tx.QueryRow(`
+		SELECT address_line, city, state, pincode
+		FROM bilty_address
+		WHERE id=$1
+	`, existingID).Scan(&existing.AddressLine, &existing.City, &existing.State, &existing.Pincode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return true, nil
+		}
+		return false, err
+	}
+
+	if existing.AddressLine != newAddr.AddressLine ||
+		existing.City != newAddr.City ||
+		existing.State != newAddr.State ||
+		existing.Pincode != newAddr.Pincode {
+		return true, nil
+	}
+	return false, nil
+}
+
+// ------------------------ GetBilty ------------------------
+
 func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool) ([]*models.Bilty, error) {
 	query := `
 		SELECT id,bilty_no,consignor_company_id,consignee_company_id,
@@ -428,10 +511,24 @@ func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool
 	return result, nil
 }
 
+// ------------------------ PDF Helpers ------------------------
+
 func (r *PostgresBiltyRepo) UpdatePDFCreatedAt(biltyID int64, t time.Time) error {
 	_, err := r.DB.Exec("UPDATE bilty SET pdf_created_at = $1 WHERE id = $2", t, biltyID)
 	return err
 }
+
+func (r *PostgresBiltyRepo) UpdatePDFInfo(id int64, path string, createdAt time.Time) error {
+	query := `
+		UPDATE bilty
+		SET pdf_path = $1, pdf_created_at = $2
+		WHERE id = $3
+	`
+	_, err := r.DB.Exec(query, path, createdAt, id)
+	return err
+}
+
+// ------------------------ Delete Bilty ------------------------
 
 func (r *PostgresBiltyRepo) DeleteBilty(biltyID int64) error {
 	tx, err := r.DB.Begin()
@@ -440,7 +537,7 @@ func (r *PostgresBiltyRepo) DeleteBilty(biltyID int64) error {
 	}
 	defer tx.Rollback()
 
-	// 1. Fetch bilty addresses and companies
+	// Fetch bilty addresses and companies
 	var consignorAddrID, consigneeAddrID *int64
 	var consignorCompanyID, consigneeCompanyID *int64
 	err = tx.QueryRow(`
@@ -452,17 +549,17 @@ func (r *PostgresBiltyRepo) DeleteBilty(biltyID int64) error {
 		return err
 	}
 
-	// 2. Delete goods linked to bilty
+	// Delete goods linked to bilty
 	if _, err := tx.Exec(`DELETE FROM goods WHERE bilty_id=$1`, biltyID); err != nil {
 		return err
 	}
 
-	// 3. Delete the bilty itself
+	// Delete the bilty itself
 	if _, err := tx.Exec(`DELETE FROM bilty WHERE id=$1`, biltyID); err != nil {
 		return err
 	}
 
-	// 4. Helper to delete bilty_address if not referenced by any other bilty
+	// Delete bilty addresses if unused
 	deleteBiltyAddressIfUnused := func(addrID *int64) error {
 		if addrID == nil {
 			return nil
@@ -480,8 +577,6 @@ func (r *PostgresBiltyRepo) DeleteBilty(biltyID int64) error {
 		}
 		return nil
 	}
-
-	// Delete bilty addresses if safe
 	if err := deleteBiltyAddressIfUnused(consignorAddrID); err != nil {
 		return err
 	}
@@ -489,51 +584,27 @@ func (r *PostgresBiltyRepo) DeleteBilty(biltyID int64) error {
 		return err
 	}
 
-	// 5. Helper to delete company_address if not used in any bilty_address
-	deleteCompanyAddressIfUnused := func(companyID *int64, addr *models.CompanyAddress) error {
-		if companyID == nil || addr == nil {
-			return nil
-		}
-		var count int
-		err := tx.QueryRow(`
-			SELECT COUNT(*) FROM bilty_address
-			WHERE company_id=$1 AND address_line=$2 AND city=$3 AND state=$4 AND pincode=$5
-		`, *companyID, addr.AddressLine, addr.City, addr.State, addr.Pincode).Scan(&count)
-		if err != nil {
-			return err
-		}
-		if count == 0 {
-			_, err := tx.Exec(`
-				DELETE FROM company_address
-				WHERE company_id=$1 AND address_line=$2 AND city=$3 AND state=$4 AND pincode=$5
-			`, *companyID, addr.AddressLine, addr.City, addr.State, addr.Pincode)
-			return err
-		}
-		return nil
-	}
-
-	// Fetch addresses to delete company_address safely
-	var consignorAddr, consigneeAddr models.CompanyAddress
-	if consignorAddrID != nil {
-		_ = tx.QueryRow(`
-			SELECT company_id, address_line, city, state, pincode 
-			FROM bilty_address WHERE id=$1
-		`, *consignorAddrID).Scan(&consignorAddr.CompanyID, &consignorAddr.AddressLine, &consignorAddr.City, &consignorAddr.State, &consignorAddr.Pincode)
-	}
-	if consigneeAddrID != nil {
-		_ = tx.QueryRow(`
-			SELECT company_id, address_line, city, state, pincode 
-			FROM bilty_address WHERE id=$1
-		`, *consigneeAddrID).Scan(&consigneeAddr.CompanyID, &consigneeAddr.AddressLine, &consigneeAddr.City, &consigneeAddr.State, &consigneeAddr.Pincode)
-	}
-
-	// Delete company addresses if safe
-	if err := deleteCompanyAddressIfUnused(consignorCompanyID, &consignorAddr); err != nil {
-		return err
-	}
-	if err := deleteCompanyAddressIfUnused(consigneeCompanyID, &consigneeAddr); err != nil {
-		return err
-	}
-
 	return tx.Commit()
+}
+
+// ------------------------ Get Bilty By ID ------------------------
+
+func (r *PostgresBiltyRepo) GetBiltyByID(id int64) (*models.Bilty, error) {
+	query := `
+		SELECT id, updated_at, pdf_created_at, pdf_path
+		FROM bilty
+		WHERE id = $1
+	`
+	row := r.DB.QueryRow(query, id)
+
+	var bilty models.Bilty
+	err := row.Scan(&bilty.ID, &bilty.UpdatedAt, &bilty.PdfCreatedAt, &bilty.PdfPath)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &bilty, nil
 }

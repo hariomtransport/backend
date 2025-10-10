@@ -28,6 +28,7 @@ type Bilty struct {
 	CreatedAt          time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 	PdfCreatedAt       time.Time `json:"pdf_created_at" db:"pdf_created_at"`
+	PdfPath            *string   `json:"pdf_path,omitempty" db:"pdf_path"`
 	Status             string    `json:"status" db:"status"` // draft | complete
 
 	// Nested objects for responses (denormalized)

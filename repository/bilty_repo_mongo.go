@@ -197,15 +197,35 @@ func (r *MongoBiltyRepo) populateNested(b *models.Bilty, ctx context.Context, db
 
 	return b
 }
-
-func (r *MongoBiltyRepo) UpdatePDFCreatedAt(biltyID int64, t time.Time) error {
-	ctx := context.Background()
+func (r *MongoBiltyRepo) GetBiltyByID(id int64) (*models.Bilty, error) {
 	db := r.DB.Database("hariomtransport")
+	collection := db.Collection("bilty")
+	filter := bson.M{"id": id}
 
-	filter := bson.M{"_id": biltyID}
-	update := bson.M{"$set": bson.M{"pdf_created_at": t}}
+	var bilty models.Bilty
+	err := collection.FindOne(context.Background(), filter).Decode(&bilty)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &bilty, nil
+}
 
-	_, err := db.Collection("bilty").UpdateOne(ctx, filter, update)
+func (r *MongoBiltyRepo) UpdatePDFInfo(id int64, path string, createdAt time.Time) error {
+	db := r.DB.Database("hariomtransport")
+	collection := db.Collection("bilty")
+
+	filter := bson.M{"id": id}
+	update := bson.M{
+		"$set": bson.M{
+			"pdf_path":       path,
+			"pdf_created_at": createdAt,
+		},
+	}
+
+	_, err := collection.UpdateOne(context.Background(), filter, update)
 	return err
 }
 
