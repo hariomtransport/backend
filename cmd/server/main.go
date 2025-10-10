@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/hariomtransport/backend/config"
-	"github.com/hariomtransport/backend/db"
-	"github.com/hariomtransport/backend/db/mongo"
-	"github.com/hariomtransport/backend/db/postgres"
-	"github.com/hariomtransport/backend/handlers"
-	"github.com/hariomtransport/backend/repository"
-	"github.com/hariomtransport/backend/routes"
+	"github.com/hariomtransport/config"
+	"github.com/hariomtransport/db"
+	"github.com/hariomtransport/db/mongo"
+	"github.com/hariomtransport/db/postgres"
+	"github.com/hariomtransport/handlers"
+	"github.com/hariomtransport/repository"
+	"github.com/hariomtransport/routes"
 )
 
 func main() {

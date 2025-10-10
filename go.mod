@@ -1,4 +1,4 @@
-module hariomtransport
+module github.com/hariomtransport/backend
 
 go 1.24
 
