@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/hariomtransport/backend/config"
-	"github.com/hariomtransport/backend/db"
 	"github.com/hariomtransport/backend/db/mongo"
 	"github.com/hariomtransport/backend/db/postgres"
 	"github.com/hariomtransport/backend/handlers"
@@ -18,7 +17,7 @@ func main() {
 	cfg := config.LoadConfig()
 
 	// Run migrations (for Postgres)
-	db.RunMigrations()
+	// db.RunMigrations()
 
 	var biltyRepo repository.BiltyRepository
 	var userRepo repository.UserRepository
