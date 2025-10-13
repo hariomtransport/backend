@@ -3,19 +3,21 @@ package utils
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"html/template"
+	"io"
+	"net/http"
 	"os"
-	"path/filepath"
 	"time"
-
-	"github.com/hariomtransport/backend/models"
-	"github.com/hariomtransport/backend/repository"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	"github.com/hariomtransport/backend/models"
+	"github.com/hariomtransport/backend/repository"
 )
 
-// GenerateBiltyPDF ensures each copy stays whole, but only moves to new page if cut.
+// GenerateBiltyPDF fetches the template from the URL specified in TEMPLATE_FILE env variable
+// and generates a PDF.
 func GenerateBiltyPDF(repo *repository.PDFRepository, biltyID int64) ([]byte, error) {
 	// Fetch initial setup
 	initial, err := repo.GetInitialForPDF()
@@ -50,10 +52,30 @@ func GenerateBiltyPDF(repo *repository.PDFRepository, biltyID int64) ([]byte, er
 	// Copy titles
 	copyTitles := []string{"Consignor Copy", "Consignee Copy", "Driver Copy"}
 
-	// Load HTML template once
-	tmpl, err := template.ParseFiles("templates/bilty_template.html")
+	// --- Fetch template from URL in TEMPLATE_FILE ---
+	templateURL := os.Getenv("TEMPLATE_FILE")
+	if templateURL == "" {
+		return nil, fmt.Errorf("TEMPLATE_FILE environment variable not set")
+	}
+
+	resp, err := http.Get(templateURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to fetch template: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to fetch template, status code: %d", resp.StatusCode)
+	}
+
+	tmplBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read template body: %w", err)
+	}
+
+	tmpl, err := template.New("bilty").Parse(string(tmplBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	var fullHTML bytes.Buffer
@@ -71,62 +93,44 @@ func GenerateBiltyPDF(repo *repository.PDFRepository, biltyID int64) ([]byte, er
 
 		var buf bytes.Buffer
 		if err := tmpl.Execute(&buf, data); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to execute template: %w", err)
 		}
 
-		// Wrap each copy in a div that avoids breaking across pages
 		fullHTML.WriteString("<div class='bilty-copy'>")
 		fullHTML.Write(buf.Bytes())
 		fullHTML.WriteString("</div>")
 	}
 
-	// Final HTML with smart CSS page handling
 	finalHTML := `
-		<!DOCTYPE html>
-		<html>
-		<head>
-		<meta charset="UTF-8">
-		<style>
-		@page {
-			size: A4;
-			margin: 20px;
-		}
-		body {
-			font-family: Arial, Helvetica, sans-serif;
-			font-size: 12px;
-			margin: 0;
-			padding: 0;
-		}
-		.bilty-copy {
-			page-break-inside: avoid; /* Prevent cutting copy in middle */
-			// margin-bottom: 15px;
-			border: none;
-		}
-		.bilty-copy:not(:last-child) {
-			// margin-bottom: 15px;
-		}
-		</style>
-		</head>
-		<body>` + fullHTML.String() + `</body></html>`
+	<!DOCTYPE html>
+	<html>
+	<head>
+	<meta charset="UTF-8">
+	<style>
+	@page { size: A4; margin: 20px; }
+	body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; margin:0; padding:0; }
+	.bilty-copy { page-break-inside: avoid; border:none; }
+	</style>
+	</head>
+	<body>` + fullHTML.String() + `</body></html>`
 
 	// Create temp HTML file
-	tmpDir := os.TempDir()
-	tmpHTML := filepath.Join(tmpDir, "bilty_"+time.Now().UTC().Format("20060102150405")+".html")
-	if err := os.WriteFile(tmpHTML, []byte(finalHTML), 0644); err != nil {
-		return nil, err
+	tmpFile := fmt.Sprintf("/tmp/bilty_%s.html", time.Now().UTC().Format("20060102150405"))
+	if err := os.WriteFile(tmpFile, []byte(finalHTML), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write temp HTML: %w", err)
 	}
-	defer os.Remove(tmpHTML)
+	defer os.Remove(tmpFile)
+
+	fileURL := "file://" + tmpFile
 
 	// Generate PDF with headless Chrome
 	ctx, cancel := chromedp.NewContext(context.Background())
 	defer cancel()
 
 	var pdfBuf []byte
-	fileURL := "file://" + tmpHTML
-
 	err = chromedp.Run(ctx,
 		chromedp.Navigate(fileURL),
-		chromedp.Sleep(1*time.Second),
+		chromedp.Sleep(2*time.Second), // ensure page fully loads
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			var err error
 			pdfBuf, _, err = page.PrintToPDF().
@@ -138,7 +142,7 @@ func GenerateBiltyPDF(repo *repository.PDFRepository, biltyID int64) ([]byte, er
 		}),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to generate PDF: %w", err)
 	}
 
 	return pdfBuf, nil

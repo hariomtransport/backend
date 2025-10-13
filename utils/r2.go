@@ -29,7 +29,8 @@ func initR2() error {
 	initOnce.Do(func() {
 		r2Bucket = os.Getenv("R2_BUCKET")
 		accountID := os.Getenv("R2_ACCOUNT_ID")
-		r2PublicBase = os.Getenv("R2_PUBLIC_URL")
+		r2PublicBase = os.Getenv("R2_PUBLIC_URL") // e.g. https://bilty-generator.<account_id>.r2.cloudflarestorage.com
+
 		endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 
 		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
@@ -74,8 +75,8 @@ func UploadToR2(fileBytes []byte, filename string) (string, error) {
 		return "", fmt.Errorf("failed to upload to R2: %v", err)
 	}
 
-	// Ensure URL is properly encoded
-	fileURL := fmt.Sprintf("%s/%s/%s", strings.TrimRight(r2PublicBase, "/"), r2Bucket, url.PathEscape(key))
+	// Clean public URL (assumes bucket is public)
+	fileURL := fmt.Sprintf("%s/%s", strings.TrimRight(r2PublicBase, "/"), url.PathEscape(key))
 	return fileURL, nil
 }
 
