@@ -23,13 +23,18 @@ var (
 	initOnce     sync.Once
 )
 
-// initializeR2 loads config once
+// initR2 initializes the R2 client once
 func initR2() error {
 	var initErr error
 	initOnce.Do(func() {
 		r2Bucket = os.Getenv("R2_BUCKET")
 		accountID := os.Getenv("R2_ACCOUNT_ID")
-		r2PublicBase = os.Getenv("R2_PUBLIC_URL") // e.g. https://bilty-generator.<account_id>.r2.cloudflarestorage.com
+		r2PublicBase = os.Getenv("R2_PUBLIC_URL") // e.g. https://<bucket>.<account_id>.r2.cloudflarestorage.com
+
+		if r2Bucket == "" || accountID == "" || r2PublicBase == "" {
+			initErr = fmt.Errorf("missing required R2 environment variables")
+			return
+		}
 
 		endpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
 
@@ -40,7 +45,8 @@ func initR2() error {
 			}, nil
 		})
 
-		cfg, err := config.LoadDefaultConfig(context.TODO(),
+		cfg, err := config.LoadDefaultConfig(context.Background(),
+			config.WithRegion("auto"), // Important for R2
 			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				os.Getenv("R2_ACCESS_KEY_ID"),
 				os.Getenv("R2_SECRET_ACCESS_KEY"),
@@ -58,14 +64,14 @@ func initR2() error {
 	return initErr
 }
 
-// UploadToR2 uploads a PDF and returns its public URL
+// UploadToR2 uploads a file (PDF) to R2 and returns its public URL
 func UploadToR2(fileBytes []byte, filename string) (string, error) {
 	if err := initR2(); err != nil {
 		return "", err
 	}
 
 	key := filepath.Base(filename)
-	_, err := r2Client.PutObject(context.TODO(), &s3.PutObjectInput{
+	_, err := r2Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket:      aws.String(r2Bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(fileBytes),
@@ -75,18 +81,17 @@ func UploadToR2(fileBytes []byte, filename string) (string, error) {
 		return "", fmt.Errorf("failed to upload to R2: %v", err)
 	}
 
-	// Clean public URL (assumes bucket is public)
+	// Construct public URL
 	fileURL := fmt.Sprintf("%s/%s", strings.TrimRight(r2PublicBase, "/"), url.PathEscape(key))
 	return fileURL, nil
 }
 
-// DeleteFromR2 deletes a file from R2 by URL or key
+// DeleteFromR2 deletes a file from R2 by URL
 func DeleteFromR2(fileURL string) error {
 	if err := initR2(); err != nil {
 		return err
 	}
 
-	// Extract object key from URL
 	u, err := url.Parse(fileURL)
 	if err != nil {
 		return fmt.Errorf("invalid file URL: %v", err)
