@@ -22,24 +22,36 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 	// Parse bilty ID
 	biltyIDStr := r.URL.Query().Get("id")
 	if biltyIDStr == "" {
-		http.Error(w, "missing bilty id", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, ApiResponse{
+			Success: false,
+			Message: "Missing bilty ID",
+		})
 		return
 	}
 
 	biltyID, err := strconv.ParseInt(biltyIDStr, 10, 64)
 	if err != nil {
-		http.Error(w, "invalid bilty id", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, ApiResponse{
+			Success: false,
+			Message: "Invalid bilty ID",
+		})
 		return
 	}
 
 	// Fetch bilty record
 	bilty, err := h.Repo.BiltyRepo.GetBiltyByID(biltyID)
 	if err != nil {
-		http.Error(w, "failed to fetch bilty: "+err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, ApiResponse{
+			Success: false,
+			Message: "Failed to fetch bilty: " + err.Error(),
+		})
 		return
 	}
 	if bilty == nil {
-		http.Error(w, "bilty not found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, ApiResponse{
+			Success: false,
+			Message: "Bilty not found",
+		})
 		return
 	}
 
@@ -49,70 +61,84 @@ func (h *PDFHandler) BiltyPDF(w http.ResponseWriter, r *http.Request) {
 		saveDir = "./pdfs"
 	}
 	if err := os.MkdirAll(saveDir, os.ModePerm); err != nil {
-		http.Error(w, "failed to create save directory: "+err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, ApiResponse{
+			Success: false,
+			Message: "Failed to create save directory: " + err.Error(),
+		})
 		return
 	}
 
-	// Decision: Should we reuse or regenerate PDF?
+	// Check if PDF needs regeneration
 	shouldGenerate := false
-
-	if bilty.PdfPath == nil {
-		shouldGenerate = true
-	} else if bilty.PdfCreatedAt == nil {
-		shouldGenerate = true
-	} else if bilty.UpdatedAt != nil && bilty.PdfCreatedAt.Before(*bilty.UpdatedAt) {
+	if bilty.PdfPath == nil ||
+		bilty.PdfCreatedAt == nil ||
+		(bilty.UpdatedAt != nil && bilty.PdfCreatedAt.Before(*bilty.UpdatedAt)) {
 		shouldGenerate = true
 	}
 
-	// If we already have a valid and up-to-date PDF → reuse it
+	// Reuse existing PDF if still valid
 	if !shouldGenerate {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf(`{"success":true,"file":"%s"}`, *bilty.PdfPath)))
+		writeJSON(w, http.StatusOK, ApiResponse{
+			Success: true,
+			Message: "Existing PDF is up-to-date",
+			Data: map[string]interface{}{
+				"file": *bilty.PdfPath,
+			},
+		})
 		return
 	}
 
 	// Generate new PDF
 	pdfBytes, err := utils.GenerateBiltyPDF(h.Repo, biltyID)
 	if err != nil {
-		http.Error(w, "failed to generate PDF: "+err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, ApiResponse{
+			Success: false,
+			Message: "Failed to generate PDF: " + err.Error(),
+		})
 		return
 	}
 	if len(pdfBytes) == 0 {
-		http.Error(w, "no bilty found", http.StatusNotFound)
+		writeJSON(w, http.StatusNotFound, ApiResponse{
+			Success: false,
+			Message: "No bilty data found to generate PDF",
+		})
 		return
 	}
 
-	// Save PDF to file
+	// Save or upload PDF
 	filename := fmt.Sprintf("bilty_%d_%d.pdf", biltyID, time.Now().Unix())
 
 	// Upload PDF to Cloudflare R2
 	r2URL, err := utils.UploadToR2(pdfBytes, filename)
 	if err != nil {
-		http.Error(w, "failed to upload PDF to R2: "+err.Error(), http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, ApiResponse{
+			Success: false,
+			Message: "Failed to upload PDF to R2: " + err.Error(),
+		})
 		return
 	}
 
 	oldPdfPath := bilty.PdfPath
 
-	// Update database with new PDF info
+	// Update database
 	now := time.Now().UTC()
 	if err := h.Repo.BiltyRepo.UpdatePDFInfo(biltyID, r2URL, now); err != nil {
-		fmt.Printf("failed to update pdf_path/pdf_created_at for bilty %d: %v\n", biltyID, err)
+		fmt.Printf("⚠️ Failed to update PDF info for bilty %d: %v\n", biltyID, err)
 	}
 
-	// Delete old PDF from R2 (after new is successfully uploaded & DB updated)
+	// Delete old PDF from R2
 	if oldPdfPath != nil && *oldPdfPath != "" {
-		fmt.Println("Deleting old PDF from R2:", *oldPdfPath)
 		if err := utils.DeleteFromR2(*oldPdfPath); err != nil {
-			fmt.Printf("failed to delete old PDF from R2 for bilty %d: %v\n", biltyID, err)
-		} else {
-			fmt.Println("Old PDF deleted successfully from R2.")
+			fmt.Printf("⚠️ Failed to delete old PDF from R2 for bilty %d: %v\n", biltyID, err)
 		}
 	}
 
-	// Respond with success
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(`{"success":true,"file":"%s"}`, r2URL)))
+	// Success response
+	writeJSON(w, http.StatusOK, ApiResponse{
+		Success: true,
+		Message: "Bilty PDF generated and uploaded successfully",
+		Data: map[string]interface{}{
+			"file": r2URL,
+		},
+	})
 }

@@ -1,7 +1,8 @@
 package handlers
 
 import (
-	"fmt"
+	"encoding/json"
+	"log"
 	"net/http"
 	"runtime"
 )
@@ -13,8 +14,24 @@ func RecoverWrapper(handler http.HandlerFunc) http.HandlerFunc {
 			if rec := recover(); rec != nil {
 				stack := make([]byte, 8*1024)
 				stack = stack[:runtime.Stack(stack, false)]
-				fmt.Printf("\n=== PANIC RECOVERED ===\nError: %v\nStacktrace:\n%s\n===================================\n", rec, string(stack))
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+
+				// Log detailed panic info to server logs
+				log.Printf(`
+				=== PANIC RECOVERED ===
+				Error: %v
+				Request: %s %s
+				Stacktrace:
+				%s
+				===================================
+				`, rec, r.Method, r.URL.Path, string(stack))
+
+				// Send consistent ApiResponse to client
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_ = json.NewEncoder(w).Encode(ApiResponse{
+					Success: false,
+					Message: "Internal server error",
+				})
 			}
 		}()
 
