@@ -29,13 +29,22 @@ func (p *PostgresDB) Connect() error {
 	if err != nil {
 		return err
 	}
+
+	// Recommended pool tuning for Neon
+	conn.SetMaxOpenConns(5)
+	conn.SetMaxIdleConns(2)
+	conn.SetConnMaxLifetime(30 * time.Minute)
+
 	p.Conn = conn
 	return p.Conn.Ping()
 }
 
 func (p *PostgresDB) Disconnect() error {
 	p.Cancel()
-	return p.Conn.Close()
+	if p.Conn != nil {
+		return p.Conn.Close()
+	}
+	return nil
 }
 
 func (p *PostgresDB) GetContext() context.Context {

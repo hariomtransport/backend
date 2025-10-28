@@ -408,18 +408,38 @@ func (r *PostgresBiltyRepo) hasAddressChanged(tx *sql.Tx, existingID int64, newA
 
 func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool) ([]*models.Bilty, error) {
 	query := `
-		SELECT id,bilty_no,consignor_company_id,consignee_company_id,
-		       consignor_address_id,consignee_address_id,
-		       from_location,to_location,date,to_pay,gstin,inv_no,pvt_marks,permit_no,
-		       value_rupees,remarks,hamali,dd_charges,other_charges,fov,statistical,
-		       created_by,created_at,status
-		FROM bilty
+		SELECT 
+			b.id, b.bilty_no, b.consignor_company_id, b.consignee_company_id,
+			b.consignor_address_id, b.consignee_address_id,
+			b.from_location, b.to_location, b.date, b.to_pay, b.gstin, b.inv_no, b.pvt_marks, b.permit_no,
+			b.value_rupees, b.remarks, b.hamali, b.dd_charges, b.other_charges, b.fov, b.statistical,
+			b.created_by, b.created_at, b.status,
+
+			-- Consignor company
+			cc1.id, cc1.name, cc1.gstin, cc1.created_at,
+			-- Consignee company
+			cc2.id, cc2.name, cc2.gstin, cc2.created_at,
+
+			-- Consignor address
+			ca1.id, ca1.company_id, ca1.address_line, ca1.city, ca1.state, ca1.pincode, ca1.created_at,
+			-- Consignee address
+			ca2.id, ca2.company_id, ca2.address_line, ca2.city, ca2.state, ca2.pincode, ca2.created_at,
+
+			-- Created by user
+			u.id, u.name, u.email, u.role, u.created_at
+		FROM bilty b
+		LEFT JOIN company cc1 ON b.consignor_company_id = cc1.id
+		LEFT JOIN company cc2 ON b.consignee_company_id = cc2.id
+		LEFT JOIN bilty_address ca1 ON b.consignor_address_id = ca1.id
+		LEFT JOIN bilty_address ca2 ON b.consignee_address_id = ca2.id
+		LEFT JOIN app_user u ON b.created_by = u.id
 	`
+
 	args := []interface{}{}
 	where := []string{}
 	i := 1
 	for k, v := range filters {
-		where = append(where, fmt.Sprintf("%s = $%d", k, i))
+		where = append(where, fmt.Sprintf("b.%s = $%d", k, i))
 		args = append(args, v)
 		i++
 	}
@@ -427,7 +447,7 @@ func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
 	if !single {
-		query += " ORDER BY created_at DESC"
+		query += " ORDER BY b.created_at DESC"
 	}
 
 	rows, err := r.DB.Query(query, args...)
@@ -437,68 +457,79 @@ func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool
 	defer rows.Close()
 
 	var result []*models.Bilty
-
-	loadCompany := func(id *int64) (*models.Company, error) {
-		if id == nil {
-			return nil, nil
-		}
-		var c models.Company
-		err := r.DB.QueryRow(`SELECT id,name,gstin,created_at FROM company WHERE id=$1`, *id).
-			Scan(&c.ID, &c.Name, &c.GSTIN, &c.CreatedAt)
-		if err != nil {
-			return nil, nil
-		}
-		return &c, nil
-	}
-
-	loadAddress := func(id *int64) (*models.BiltyAddress, error) {
-		if id == nil {
-			return nil, nil
-		}
-		var a models.BiltyAddress
-		err := r.DB.QueryRow(`SELECT id,company_id,address_line,city,state,pincode,created_at FROM bilty_address WHERE id=$1`, *id).
-			Scan(&a.ID, &a.CompanyID, &a.AddressLine, &a.City, &a.State, &a.Pincode, &a.CreatedAt)
-		if err != nil {
-			return nil, nil
-		}
-		return &a, nil
-	}
-
 	for rows.Next() {
 		var b models.Bilty
-		if err := rows.Scan(
+		var consignorC, consigneeC models.Company
+		var consignorA, consigneeA models.BiltyAddress
+		var user models.AppUser
+
+		err := rows.Scan(
 			&b.ID, &b.BiltyNo, &b.ConsignorCompanyID, &b.ConsigneeCompanyID,
 			&b.ConsignorAddressID, &b.ConsigneeAddressID,
 			&b.FromLocation, &b.ToLocation, &b.Date, &b.ToPay, &b.GSTIN, &b.InvNo,
 			&b.PVTMarks, &b.PermitNo, &b.ValueRupees, &b.Remarks,
 			&b.Hamali, &b.DDCharges, &b.OtherCharges, &b.FOV, &b.Statistical,
 			&b.CreatedBy, &b.CreatedAt, &b.Status,
-		); err != nil {
+
+			&consignorC.ID, &consignorC.Name, &consignorC.GSTIN, &consignorC.CreatedAt,
+			&consigneeC.ID, &consigneeC.Name, &consigneeC.GSTIN, &consigneeC.CreatedAt,
+
+			&consignorA.ID, &consignorA.CompanyID, &consignorA.AddressLine, &consignorA.City, &consignorA.State, &consignorA.Pincode, &consignorA.CreatedAt,
+			&consigneeA.ID, &consigneeA.CompanyID, &consigneeA.AddressLine, &consigneeA.City, &consigneeA.State, &consigneeA.Pincode, &consigneeA.CreatedAt,
+
+			&user.ID, &user.Name, &user.Email, &user.Role, &user.CreatedAt,
+		)
+		if err != nil {
 			return nil, err
 		}
 
-		b.ConsignorCompany, _ = loadCompany(b.ConsignorCompanyID)
-		b.ConsigneeCompany, _ = loadCompany(b.ConsigneeCompanyID)
-		b.ConsignorAddressSnap, _ = loadAddress(b.ConsignorAddressID)
-		b.ConsigneeAddressSnap, _ = loadAddress(b.ConsigneeAddressID)
-
-		gRows, _ := r.DB.Query(`SELECT id,bilty_id,particulars,num_of_pkts,weight_kg,rate,per,amount FROM goods WHERE bilty_id=$1`, b.ID)
-		for gRows.Next() {
-			var g models.Goods
-			_ = gRows.Scan(&g.ID, &g.BiltyID, &g.Particulars, &g.NumOfPkts, &g.WeightKG, &g.Rate, &g.Per, &g.Amount)
-			b.Goods = append(b.Goods, g)
+		if consignorC.ID != 0 {
+			b.ConsignorCompany = &consignorC
 		}
-		gRows.Close()
-
-		if b.CreatedBy != 0 {
-			var u models.AppUser
-			if err := r.DB.QueryRow(`SELECT id,name,email,role,created_at FROM app_user WHERE id=$1`, b.CreatedBy).
-				Scan(&u.ID, &u.Name, &u.Email, &u.Role, &u.CreatedAt); err == nil {
-				b.CreatedByUser = &u
-			}
+		if consigneeC.ID != 0 {
+			b.ConsigneeCompany = &consigneeC
+		}
+		if consignorA.ID != 0 {
+			b.ConsignorAddressSnap = &consignorA
+		}
+		if consigneeA.ID != 0 {
+			b.ConsigneeAddressSnap = &consigneeA
+		}
+		if user.ID != 0 {
+			b.CreatedByUser = &user
 		}
 
 		result = append(result, &b)
+	}
+
+	// Load all goods in one go (to avoid N+1)
+	if len(result) > 0 {
+		ids := make([]interface{}, len(result))
+		idStrs := make([]string, len(result))
+		for i, b := range result {
+			ids[i] = b.ID
+			idStrs[i] = fmt.Sprintf("$%d", i+1)
+		}
+		goodsQuery := fmt.Sprintf(`
+			SELECT id, bilty_id, particulars, num_of_pkts, weight_kg, rate, per, amount
+			FROM goods
+			WHERE bilty_id IN (%s)
+		`, strings.Join(idStrs, ","))
+		goodsRows, _ := r.DB.Query(goodsQuery, ids...)
+		defer goodsRows.Close()
+
+		goodsMap := make(map[int64][]models.Goods)
+		for goodsRows.Next() {
+			var g models.Goods
+			_ = goodsRows.Scan(&g.ID, &g.BiltyID, &g.Particulars, &g.NumOfPkts, &g.WeightKG, &g.Rate, &g.Per, &g.Amount)
+			goodsMap[g.BiltyID] = append(goodsMap[g.BiltyID], g)
+		}
+
+		for _, b := range result {
+			if g, ok := goodsMap[b.ID]; ok {
+				b.Goods = g
+			}
+		}
 	}
 
 	if single {
@@ -507,7 +538,6 @@ func (r *PostgresBiltyRepo) GetBilty(filters map[string]interface{}, single bool
 		}
 		return nil, nil
 	}
-
 	return result, nil
 }
 

@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS app_user (
     role TEXT NOT NULL CHECK (role IN ('admin', 'staff', 'manager')),
     created_at TIMESTAMP DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_app_user_role ON app_user(role);
+
 
 -- 2. Company
 CREATE TABLE IF NOT EXISTS company (
@@ -15,6 +17,9 @@ CREATE TABLE IF NOT EXISTS company (
     gstin TEXT NULL,
     created_at TIMESTAMP DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_company_name ON company(name);
+CREATE INDEX IF NOT EXISTS idx_company_gstin ON company(gstin);
+
 
 -- 3. Company Address
 CREATE TABLE IF NOT EXISTS company_address (
@@ -27,6 +32,10 @@ CREATE TABLE IF NOT EXISTS company_address (
     is_default BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_company_address_company_id ON company_address(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_address_city_state ON company_address(city, state);
+CREATE INDEX IF NOT EXISTS idx_company_address_is_default ON company_address(is_default);
+
 
 -- 4. Bilty Address (snapshot)
 CREATE TABLE IF NOT EXISTS bilty_address (
@@ -38,6 +47,9 @@ CREATE TABLE IF NOT EXISTS bilty_address (
     pincode TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_bilty_address_company_id ON bilty_address(company_id);
+CREATE INDEX IF NOT EXISTS idx_bilty_address_city_state ON bilty_address(city, state);
+
 
 -- 5. Bilty
 CREATE TABLE IF NOT EXISTS bilty (
@@ -51,7 +63,7 @@ CREATE TABLE IF NOT EXISTS bilty (
     to_location TEXT NOT NULL,
     date DATE NOT NULL,
     to_pay NUMERIC(12,2) DEFAULT 0,
-    gstin TEXT NULL,
+    gstin TEXT,
     inv_no TEXT,
     pvt_marks TEXT,
     permit_no TEXT,
@@ -66,8 +78,19 @@ CREATE TABLE IF NOT EXISTS bilty (
     created_at TIMESTAMP DEFAULT now(),
     updated_at TIMESTAMP DEFAULT now(),
     pdf_created_at TIMESTAMP,
+    pdf_path TEXT,
     status TEXT NOT NULL CHECK (status IN ('draft', 'complete'))
 );
+
+-- ⚡ Performance indexes for fast bilty fetch
+CREATE INDEX IF NOT EXISTS idx_bilty_status ON bilty(status);
+CREATE INDEX IF NOT EXISTS idx_bilty_date ON bilty(date);
+CREATE INDEX IF NOT EXISTS idx_bilty_consignor_company_id ON bilty(consignor_company_id);
+CREATE INDEX IF NOT EXISTS idx_bilty_consignee_company_id ON bilty(consignee_company_id);
+CREATE INDEX IF NOT EXISTS idx_bilty_created_by ON bilty(created_by);
+CREATE INDEX IF NOT EXISTS idx_bilty_from_to_location ON bilty(from_location, to_location);
+CREATE INDEX IF NOT EXISTS idx_bilty_inv_no ON bilty(inv_no);
+
 
 -- 6. Goods
 CREATE TABLE IF NOT EXISTS goods (
@@ -80,8 +103,11 @@ CREATE TABLE IF NOT EXISTS goods (
     per TEXT,
     amount NUMERIC(12,2)
 );
+CREATE INDEX IF NOT EXISTS idx_goods_bilty_id ON goods(bilty_id);
+CREATE INDEX IF NOT EXISTS idx_goods_particulars ON goods(particulars);
 
--- 7. Initial Details
+
+-- 7. Initial Setup
 CREATE TABLE IF NOT EXISTS initial_setup (
     id BIGSERIAL PRIMARY KEY,
     company_name TEXT NOT NULL,
@@ -93,4 +119,34 @@ CREATE TABLE IF NOT EXISTS initial_setup (
     mobile JSONB,
     footnote JSONB,
     created_at TIMESTAMP DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_initial_setup_company_name ON initial_setup(company_name);
+
+
+-- ✅ Insert default company details (only if not exists)
+INSERT INTO initial_setup (
+    company_name,
+    gstin,
+    address,
+    city,
+    state,
+    pincode,
+    mobile,
+    footnote
+)
+SELECT
+    'HARI OM TRANSPORT AGENCY',
+    '10BFCPK7445G2ZQ',
+    'H.O.-N.H.31,BYPASS ROAD,NEAR-MANGLA ASTHAN BIHAR SHARIF(NALANDA)',
+    'Patna',
+    'Bihar',
+    '800007',
+    '[{"number": "9835892439", "label": "H.O"}, {"number": "9608241192", "label": "PHR"}]'::jsonb,
+    '[
+        "N.B. We have read the terms & conditions stipulated over leaf and hereby declared that the particulars furnished are correct.Carriers are not responsible for Leakage,Breakage & Damages.",
+        "1.NO ANY RECALLING ACCEPTED AFTER 30 DAYS(1 MONTH).",
+        "2.THE TRANSPORT SHALL NOT BOUND TO GIVE ANY FURTHER RECORD AFTER TWO MONTHS."
+    ]'::jsonb
+WHERE NOT EXISTS (
+    SELECT 1 FROM initial_setup WHERE company_name = 'HARI OM TRANSPORT AGENCY'
 );
