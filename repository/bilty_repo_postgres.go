@@ -290,20 +290,67 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 			return err
 		}
 	} else {
+		// -------------------- Handle Company Updates --------------------
+		var existingConsignor, existingConsignee models.Company
+
+		// Fetch existing company details for comparison
+		err := tx.QueryRow(`SELECT name, gstin FROM company WHERE id=$1`, bilty.ConsignorCompanyID).
+			Scan(&existingConsignor.Name, &existingConsignor.GSTIN)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		err = tx.QueryRow(`SELECT name, gstin FROM company WHERE id=$1`, bilty.ConsigneeCompanyID).
+			Scan(&existingConsignee.Name, &existingConsignee.GSTIN)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+
+		// If consignor company changed, insert a new one
+		if bilty.ConsignorCompany != nil {
+			nameChanged := existingConsignor.Name != bilty.ConsignorCompany.Name
+			gstinChanged := (existingConsignor.GSTIN == nil && bilty.ConsignorCompany.GSTIN != nil) ||
+				(existingConsignor.GSTIN != nil && bilty.ConsignorCompany.GSTIN == nil) ||
+				(existingConsignor.GSTIN != nil && bilty.ConsignorCompany.GSTIN != nil &&
+					*existingConsignor.GSTIN != *bilty.ConsignorCompany.GSTIN)
+
+			if nameChanged || gstinChanged {
+				newConsignorID, err := r.upsertCompany(tx, bilty.ConsignorCompany)
+				if err != nil {
+					return err
+				}
+				bilty.ConsignorCompanyID = &newConsignorID
+			}
+		}
+
+		// If consignee company changed, insert a new one
+		if bilty.ConsigneeCompany != nil {
+			nameChanged := existingConsignee.Name != bilty.ConsigneeCompany.Name
+			gstinChanged := (existingConsignee.GSTIN == nil && bilty.ConsigneeCompany.GSTIN != nil) ||
+				(existingConsignee.GSTIN != nil && bilty.ConsigneeCompany.GSTIN == nil) ||
+				(existingConsignee.GSTIN != nil && bilty.ConsigneeCompany.GSTIN != nil &&
+					*existingConsignee.GSTIN != *bilty.ConsigneeCompany.GSTIN)
+
+			if nameChanged || gstinChanged {
+				newConsigneeID, err := r.upsertCompany(tx, bilty.ConsigneeCompany)
+				if err != nil {
+					return err
+				}
+				bilty.ConsigneeCompanyID = &newConsigneeID
+			}
+		}
+
+		// -------------------- Address Change Detection --------------------
 		var hasConsignorAddressChanged bool
 		var consignorErr error
 
 		if bilty.ConsignorAddressID != nil {
 			hasConsignorAddressChanged, consignorErr = r.hasAddressChanged(tx, *bilty.ConsignorAddressID, bilty.ConsignorAddressSnap)
 		} else {
-			// No existing address → treat as changed
 			hasConsignorAddressChanged = true
 		}
-
 		if consignorErr != nil {
 			return consignorErr
 		}
-
 		if hasConsignorAddressChanged && bilty.ConsignorAddressSnap != nil {
 			bilty.ConsignorAddressID, err = r.handleBiltyAddress(tx, bilty.ConsignorCompanyID, bilty.ConsignorAddressSnap, bilty.ConsignorAddressID)
 			if err != nil {
@@ -317,46 +364,44 @@ func (r *PostgresBiltyRepo) CreateBiltyWithParties(bilty *models.Bilty) error {
 		if bilty.ConsigneeAddressID != nil {
 			hasConsigneeAddressChanged, consigneeErr = r.hasAddressChanged(tx, *bilty.ConsigneeAddressID, bilty.ConsigneeAddressSnap)
 		} else {
-			// No existing address → treat as changed
 			hasConsigneeAddressChanged = true
 		}
-
 		if consigneeErr != nil {
 			return consigneeErr
 		}
-
 		if hasConsigneeAddressChanged && bilty.ConsigneeAddressSnap != nil {
 			bilty.ConsigneeAddressID, err = r.handleBiltyAddress(tx, bilty.ConsigneeCompanyID, bilty.ConsigneeAddressSnap, bilty.ConsigneeAddressID)
 			if err != nil {
 				return err
 			}
 		}
-		// Update main bilty, do not touch bilty addresses
-		_, err := tx.Exec(`
-			UPDATE bilty SET
-				consignor_company_id=$1,
-				consignee_company_id=$2,
-				from_location=$3,
-				to_location=$4,
-				date=$5,
-				to_pay=$6,
-				gstin=$7,
-				inv_no=$8,
-				pvt_marks=$9,
-				permit_no=$10,
-				value_rupees=$11,
-				remarks=$12,
-				hamali=$13,
-				dd_charges=$14,
-				other_charges=$15,
-				fov=$16,
-				statistical=$17,
-				status=$18,
-				updated_at=$19,
-				consignor_address_id=$20,
-				consignee_address_id=$21
-			WHERE id=$22
-		`,
+
+		// -------------------- Update Main Bilty --------------------
+		_, err = tx.Exec(`
+		UPDATE bilty SET
+			consignor_company_id=$1,
+			consignee_company_id=$2,
+			from_location=$3,
+			to_location=$4,
+			date=$5,
+			to_pay=$6,
+			gstin=$7,
+			inv_no=$8,
+			pvt_marks=$9,
+			permit_no=$10,
+			value_rupees=$11,
+			remarks=$12,
+			hamali=$13,
+			dd_charges=$14,
+			other_charges=$15,
+			fov=$16,
+			statistical=$17,
+			status=$18,
+			updated_at=$19,
+			consignor_address_id=$20,
+			consignee_address_id=$21
+		WHERE id=$22
+	`,
 			bilty.ConsignorCompanyID, bilty.ConsigneeCompanyID,
 			bilty.FromLocation, bilty.ToLocation, bilty.Date, bilty.ToPay, bilty.GSTIN,
 			bilty.InvNo, bilty.PVTMarks, bilty.PermitNo, bilty.ValueRupees, bilty.Remarks,
